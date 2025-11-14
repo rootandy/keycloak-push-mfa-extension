@@ -15,6 +15,7 @@ public final class PushMfaConstants {
     public static final String CHALLENGE_APPROVE = "approve";
     public static final String CHALLENGE_DENY = "deny";
     public static final String ENROLL_CHALLENGE_NOTE = "push-mfa-enroll-challenge-id";
+    public static final String ENROLL_SSE_TOKEN_NOTE = "push-mfa-enroll-sse-token";
     public static final String PUSH_MESSAGE_VERSION = "1";
     public static final String PUSH_MESSAGE_TYPE = "1";
 

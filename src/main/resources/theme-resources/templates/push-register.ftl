@@ -181,13 +181,42 @@
             })();
             (function() {
                 var pollForm = document.getElementById('kc-push-register-poll');
-                var pollIntervalSeconds = ${(pollingIntervalSeconds?c)!3};
-                if (!pollForm || pollIntervalSeconds <= 0) {
+                var eventsUrl = '${(enrollEventsUrl!"")?js_string}';
+
+                function submitPoll() {
+                    if (!pollForm) {
+                        return;
+                    }
+                    (pollForm.requestSubmit ? pollForm.requestSubmit() : pollForm.submit());
+                }
+
+                if (!eventsUrl) {
+                    console.warn('push-mfa enrollment SSE unavailable: missing eventsUrl');
                     return;
                 }
-                setTimeout(function () {
-                    pollForm.requestSubmit ? pollForm.requestSubmit() : pollForm.submit();
-                }, pollIntervalSeconds * 1000);
+                if (typeof EventSource === 'undefined') {
+                    console.warn('push-mfa enrollment SSE unavailable: EventSource unsupported in this browser');
+                    return;
+                }
+
+                var source = new EventSource(eventsUrl);
+
+                source.addEventListener('status', function (event) {
+                    try {
+                        var data = event && event.data ? JSON.parse(event.data) : null;
+                        if (data && data.status && data.status !== 'PENDING') {
+                            source.close();
+                            submitPoll();
+                        }
+                    } catch (err) {
+                        console.warn('push-mfa enrollment SSE parse error', err);
+                    }
+                });
+
+                source.addEventListener('error', function (event) {
+                    // Let EventSource handle reconnect; we only log for visibility.
+                    console.warn('push-mfa enrollment SSE error (auto-retry handled by browser)', event);
+                });
             })();
         </script>
     </#if>

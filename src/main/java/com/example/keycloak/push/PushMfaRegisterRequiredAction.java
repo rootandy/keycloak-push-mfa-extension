@@ -8,6 +8,7 @@ import org.keycloak.authentication.RequiredActionProvider;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
@@ -42,7 +43,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
     public void requiredActionChallenge(RequiredActionContext context) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         PushChallengeStore store = new PushChallengeStore(context.getSession());
-        PushChallenge challenge = fetchOrCreateChallenge(context, authSession, store, false);
+        PushChallenge challenge = ensureWatchableChallenge(context, authSession, store, fetchOrCreateChallenge(context, authSession, store, false));
 
         String enrollmentToken = PushEnrollmentTokenBuilder.build(
             context.getSession(),
@@ -57,6 +58,10 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
         form.setAttribute("qrPayload", enrollmentToken);
         form.setAttribute("enrollChallengeId", challenge.getId());
         form.setAttribute("pollingIntervalSeconds", 3);
+        String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
+        if (eventsUrl != null) {
+            form.setAttribute("enrollEventsUrl", eventsUrl);
+        }
         context.challenge(form.createForm("push-register.ftl"));
     }
 
@@ -82,7 +87,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
                 return;
             }
             cleanupChallenge(authSession, store);
-            PushChallenge challenge = fetchOrCreateChallenge(context, authSession, store, false);
+            PushChallenge challenge = ensureWatchableChallenge(context, authSession, store, fetchOrCreateChallenge(context, authSession, store, false));
             String enrollmentToken = PushEnrollmentTokenBuilder.build(
                 context.getSession(),
                 context.getRealm(),
@@ -96,6 +101,10 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
             form.setAttribute("qrPayload", enrollmentToken);
             form.setAttribute("enrollChallengeId", challenge.getId());
             form.setAttribute("pollingIntervalSeconds", 5);
+            String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
+            if (eventsUrl != null) {
+                form.setAttribute("enrollEventsUrl", eventsUrl);
+            }
             context.challenge(form.createForm("push-register.ftl"));
             return;
         }
@@ -150,13 +159,16 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
         if (challenge == null) {
             byte[] nonceBytes = new byte[PushMfaConstants.NONCE_BYTES_SIZE];
             RANDOM.nextBytes(nonceBytes);
+            String watchSecret = KeycloakModelUtils.generateId();
             challenge = store.create(
                 context.getRealm().getId(),
                 context.getUser().getId(),
                 nonceBytes,
                 PushChallenge.Type.ENROLLMENT,
                 PushMfaConstants.CHALLENGE_TTL,
-                null);
+                null,
+                null,
+                watchSecret);
             authSession.setAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE, challenge.getId());
         }
 
@@ -169,5 +181,39 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
             store.remove(challengeId);
             authSession.removeAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE);
         }
+        authSession.removeAuthNote(PushMfaConstants.ENROLL_SSE_TOKEN_NOTE);
+    }
+
+    private PushChallenge ensureWatchableChallenge(RequiredActionContext context,
+                                                   AuthenticationSessionModel authSession,
+                                                   PushChallengeStore store,
+                                                   PushChallenge challenge) {
+        PushChallenge ensured = challenge;
+        if (ensured == null || ensured.getWatchSecret() == null || ensured.getWatchSecret().isBlank()) {
+            cleanupChallenge(authSession, store);
+            ensured = fetchOrCreateChallenge(context, authSession, store, true);
+        }
+        if (ensured.getWatchSecret() != null && !ensured.getWatchSecret().isBlank()) {
+            authSession.setAuthNote(PushMfaConstants.ENROLL_SSE_TOKEN_NOTE, ensured.getWatchSecret());
+        }
+        return ensured;
+    }
+
+    private String buildEnrollmentEventsUrl(RequiredActionContext context, PushChallenge challenge) {
+        String watchSecret = challenge.getWatchSecret();
+        if (watchSecret == null || watchSecret.isBlank()) {
+            return null;
+        }
+        return context.getUriInfo().getBaseUriBuilder()
+            .path("realms")
+            .path(context.getRealm().getName())
+            .path("push-mfa")
+            .path("enroll")
+            .path("challenges")
+            .path(challenge.getId())
+            .path("events")
+            .queryParam("secret", watchSecret)
+            .build()
+            .toString();
     }
 }

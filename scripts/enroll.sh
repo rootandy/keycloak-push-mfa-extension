@@ -13,6 +13,7 @@ Environment overrides:
   DEVICE_TYPE              Device type stored with the credential (default: ios)
   FIREBASE_ID              Firebase/FCM identifier (default: mock-fcm-token)
   PSEUDONYMOUS_ID          Pseudonymous user identifier (default: generated UUID)
+  DEVICE_LABEL             Display label stored with the credential (default: "Demo Phone")
 EOF
 }
 
@@ -141,9 +142,10 @@ ENROLL_PAYLOAD_JSON=$(jq -n \
   --arg deviceType "$DEVICE_TYPE" \
   --arg firebaseId "$FIREBASE_ID" \
   --arg pseudonymousUserId "$PSEUDONYMOUS_ID" \
+  --arg deviceLabel "$DEVICE_LABEL" \
   --arg exp "$EXPIRY" \
   --argjson cnf "$(jq -c '{"jwk": .}' device-jwk.json)" \
-  '{"enrollmentId": $enrollmentId, "nonce": $nonce, "sub": $sub, "deviceType": $deviceType, "firebaseId": $firebaseId, "pseudonymousUserId": $pseudonymousUserId, "exp": ($exp|tonumber), "cnf": $cnf}')
+  '{"enrollmentId": $enrollmentId, "nonce": $nonce, "sub": $sub, "deviceType": $deviceType, "firebaseId": $firebaseId, "pseudonymousUserId": $pseudonymousUserId, "deviceLabel": $deviceLabel, "exp": ($exp|tonumber), "cnf": $cnf}')
 
 ENROLL_HEADER_B64=$(printf '{"alg":"RS256","kid":"%s","typ":"JWT"}' "$DEVICE_KEY_ID" | b64urlencode)
 ENROLL_PAYLOAD_B64=$(printf '%s' "$ENROLL_PAYLOAD_JSON" | b64urlencode)
@@ -154,8 +156,7 @@ echo ">> Submitting enrollment reply"
 echo $ENROLL_PAYLOAD_JSON
 ENROLL_COMPLETE_BODY=$(jq -n \
   --arg token "$DEVICE_ENROLL_TOKEN" \
-  --arg deviceLabel "$DEVICE_LABEL" \
-  '{"token": $token, "deviceLabel": $deviceLabel}')
+  '{"token": $token}')
 
 ENROLL_RESPONSE=$(curl -s -X POST \
   -H "Authorization: Bearer $DEVICE_TOKEN" \
@@ -164,10 +165,6 @@ ENROLL_RESPONSE=$(curl -s -X POST \
   "$ENROLL_COMPLETE_URL")
 
 echo "$ENROLL_RESPONSE" | jq
-CREDENTIAL_ID=$(echo "$ENROLL_RESPONSE" | jq -r '.credentialId // empty')
-if [[ -n $CREDENTIAL_ID ]]; then
-  echo ">> Credential stored as $CREDENTIAL_ID"
-fi
 
 PRIVATE_KEY_B64=$(base64 < "$DEVICE_PRIVATE_KEY_PATH" | tr -d '\n')
 PUBLIC_KEY_B64=$(base64 < "$DEVICE_PUBLIC_KEY_PATH" | tr -d '\n')
@@ -187,9 +184,8 @@ jq -n \
   --arg firebaseId "$FIREBASE_ID" \
   --arg keyId "$DEVICE_KEY_ID" \
   --arg deviceLabel "$DEVICE_LABEL" \
-  --arg credentialId "$CREDENTIAL_ID" \
   --argjson publicJwk "$PUBLIC_JWK" \
-  '{userId:$userId, pseudonymousUserId:$pseudonymousUserId, tokenEndpoint:$tokenEndpoint, clientId:$clientId, clientSecret:$clientSecret, privateKey:$privateKey, publicKey:$publicKey, deviceType:$deviceType, firebaseId:$firebaseId, keyId:$keyId, deviceLabel:$deviceLabel, publicJwk:$publicJwk, credentialId:$credentialId}' > "$STATE_FILE"
+  '{userId:$userId, pseudonymousUserId:$pseudonymousUserId, tokenEndpoint:$tokenEndpoint, clientId:$clientId, clientSecret:$clientSecret, privateKey:$privateKey, publicKey:$publicKey, deviceType:$deviceType, firebaseId:$firebaseId, keyId:$keyId, deviceLabel:$deviceLabel, publicJwk:$publicJwk}' > "$STATE_FILE"
 
 echo ">> Device state stored in $STATE_FILE"
 popd >/dev/null

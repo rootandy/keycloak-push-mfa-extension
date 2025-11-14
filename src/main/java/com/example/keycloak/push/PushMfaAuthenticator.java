@@ -50,19 +50,22 @@ public class PushMfaAuthenticator implements Authenticator {
         }
         byte[] challengeBytes = new byte[0];
 
+        String clientId = context.getAuthenticationSession().getClient() != null
+            ? context.getAuthenticationSession().getClient().getClientId()
+            : null;
+
         PushChallenge pushChallenge = challengeStore.create(
             context.getRealm().getId(),
             context.getUser().getId(),
             challengeBytes,
             PushChallenge.Type.AUTHENTICATION,
             PushMfaConstants.CHALLENGE_TTL,
-            credential.getId());
+            credential.getId(),
+            clientId,
+            null);
 
         authSession.setAuthNote(PushMfaConstants.CHALLENGE_NOTE, pushChallenge.getId());
 
-        String clientId = context.getAuthenticationSession().getClient() != null
-            ? context.getAuthenticationSession().getClient().getClientId()
-            : null;
         String confirmToken = PushConfirmTokenBuilder.build(
             context.getSession(),
             context.getRealm(),
@@ -139,9 +142,10 @@ public class PushMfaAuthenticator implements Authenticator {
             case PENDING -> {
                 CredentialModel credentialModel = resolveCredentialForChallenge(context.getUser(), current);
                 PushCredentialData credentialData = credentialModel == null ? null : PushCredentialService.readCredentialData(credentialModel);
-                String clientId = context.getAuthenticationSession().getClient() != null
-                    ? context.getAuthenticationSession().getClient().getClientId()
-                    : null;
+                String clientId = current.getClientId();
+                if (clientId == null && context.getAuthenticationSession().getClient() != null) {
+                    clientId = context.getAuthenticationSession().getClient().getClientId();
+                }
                 String confirmToken = (credentialModel == null || credentialData == null || credentialData.getPseudonymousUserId() == null)
                     ? null
                     : PushConfirmTokenBuilder.build(
