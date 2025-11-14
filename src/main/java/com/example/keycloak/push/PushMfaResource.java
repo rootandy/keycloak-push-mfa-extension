@@ -12,8 +12,12 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
+import org.jboss.logging.Logger;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -31,11 +35,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.HashMap;
+import java.util.concurrent.CompletableFuture;
 import java.security.PublicKey;
 
 @Path("/")
 @Produces(MediaType.APPLICATION_JSON)
 public class PushMfaResource {
+
+    private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
 
     private final KeycloakSession session;
     private final PushChallengeStore challengeStore;
@@ -43,6 +51,20 @@ public class PushMfaResource {
     public PushMfaResource(KeycloakSession session) {
         this.session = session;
         this.challengeStore = new PushChallengeStore(session);
+    }
+
+    @GET
+    @Path("enroll/challenges/{challengeId}/events")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public void streamEnrollmentEvents(@PathParam("challengeId") String challengeId,
+                                       @QueryParam("secret") String secret,
+                                       @jakarta.ws.rs.core.Context SseEventSink sink,
+                                       @jakarta.ws.rs.core.Context Sse sse) {
+        if (sink == null || sse == null) {
+            return;
+        }
+        LOG.infof("Received enrollment SSE stream request for challenge %s", challengeId);
+        CompletableFuture.runAsync(() -> emitEnrollmentEvents(challengeId, secret, sink, sse));
     }
 
     @POST
@@ -294,6 +316,88 @@ public class PushMfaResource {
         long exp = expNode.asLong(Long.MIN_VALUE);
         if (exp != Long.MIN_VALUE && Instant.now().getEpochSecond() > exp) {
             throw new BadRequestException(tokenDescription + " expired");
+        }
+    }
+
+    private void emitEnrollmentEvents(String challengeId,
+                                      String secret,
+                                      SseEventSink sink,
+                                      Sse sse) {
+        try (SseEventSink eventSink = sink) {
+            LOG.infof("Starting enrollment SSE stream for challenge %s", challengeId);
+            if (secret == null || secret.isBlank()) {
+                LOG.infof("Enrollment SSE rejected for %s due to missing secret", challengeId);
+                sendEnrollmentStatusEvent(eventSink, sse, "INVALID", null);
+                return;
+            }
+
+            PushChallengeStatus lastStatus = null;
+            while (!eventSink.isClosed()) {
+                Optional<PushChallenge> challengeOpt = challengeStore.get(challengeId);
+                if (challengeOpt.isEmpty()) {
+                    LOG.infof("Enrollment SSE challenge %s not found", challengeId);
+                    sendEnrollmentStatusEvent(eventSink, sse, "NOT_FOUND", null);
+                    break;
+                }
+                PushChallenge challenge = challengeOpt.get();
+                if (!Objects.equals(secret, challenge.getWatchSecret())) {
+                    LOG.infof("Enrollment SSE forbidden for %s due to secret mismatch", challengeId);
+                    sendEnrollmentStatusEvent(eventSink, sse, "FORBIDDEN", null);
+                    break;
+                }
+
+                PushChallengeStatus currentStatus = challenge.getStatus();
+                if (lastStatus != currentStatus) {
+                    sendEnrollmentStatusEvent(eventSink, sse, currentStatus.name(), challenge);
+                    lastStatus = currentStatus;
+                }
+
+                if (currentStatus != PushChallengeStatus.PENDING) {
+                    LOG.infof("Enrollment SSE exiting for %s after reaching status %s", challengeId, currentStatus);
+                    break;
+                }
+
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    sendEnrollmentStatusEvent(eventSink, sse, "INTERRUPTED", null);
+                    LOG.infof("Enrollment SSE interrupted for %s", challengeId);
+                    break;
+                }
+            }
+            LOG.infof("Enrollment SSE stream closed for challenge %s", challengeId);
+        } catch (Exception ex) {
+            LOG.infof(ex, "Failed to stream enrollment events for %s", challengeId);
+        }
+    }
+
+    private void sendEnrollmentStatusEvent(SseEventSink sink,
+                                           Sse sse,
+                                           String status,
+                                           PushChallenge challenge) {
+        if (sink.isClosed()) {
+            return;
+        }
+        try {
+            String targetChallengeId = challenge != null ? challenge.getId() : "n/a";
+            LOG.infof("Emitting enrollment SSE status %s for challenge %s", status, targetChallengeId);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("status", status);
+            if (challenge != null) {
+                payload.put("challengeId", challenge.getId());
+                payload.put("expiresAt", challenge.getExpiresAt().toString());
+                if (challenge.getResolvedAt() != null) {
+                    payload.put("resolvedAt", challenge.getResolvedAt().toString());
+                }
+            }
+            String data = JsonSerialization.writeValueAsString(payload);
+            sink.send(sse.newEventBuilder()
+                .name("status")
+                .data(String.class, data)
+                .build());
+        } catch (Exception ex) {
+            LOG.infof(ex, "Unable to send enrollment SSE status %s for %s", status, challenge != null ? challenge.getId() : "n/a");
         }
     }
 

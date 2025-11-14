@@ -17,6 +17,7 @@ public final class PushChallenge {
     private final byte[] nonce;
     private final String credentialId;
     private final String clientId;
+    private final String watchSecret;
     private final Instant expiresAt;
     private final Type type;
     private final PushChallengeStatus status;
@@ -29,6 +30,7 @@ public final class PushChallenge {
                          byte[] nonce,
                          String credentialId,
                          String clientId,
+                         String watchSecret,
                          Instant expiresAt,
                          Type type,
                          PushChallengeStatus status,
@@ -40,6 +42,7 @@ public final class PushChallenge {
         this.nonce = Arrays.copyOf(Objects.requireNonNull(nonce), nonce.length);
         this.credentialId = credentialId;
         this.clientId = clientId;
+        this.watchSecret = watchSecret;
         this.expiresAt = Objects.requireNonNull(expiresAt);
         this.type = Objects.requireNonNull(type);
         this.status = Objects.requireNonNull(status);
@@ -69,6 +72,10 @@ public final class PushChallenge {
 
     public String getClientId() {
         return clientId;
+    }
+
+    public String getWatchSecret() {
+        return watchSecret;
     }
 
     public Instant getExpiresAt() {

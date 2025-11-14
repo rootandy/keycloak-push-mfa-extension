@@ -61,7 +61,8 @@ public class PushMfaAuthenticator implements Authenticator {
             PushChallenge.Type.AUTHENTICATION,
             PushMfaConstants.CHALLENGE_TTL,
             credential.getId(),
-            clientId);
+            clientId,
+            null);
 
         authSession.setAuthNote(PushMfaConstants.CHALLENGE_NOTE, pushChallenge.getId());
 

@@ -32,7 +32,8 @@ public class PushChallengeStore {
                                 PushChallenge.Type type,
                                 Duration ttl,
                                 String credentialId,
-                                String clientId) {
+                                String clientId,
+                                String watchSecret) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(ttl);
         String id = KeycloakModelUtils.generateId();
@@ -51,6 +52,9 @@ public class PushChallengeStore {
         if (clientId != null) {
             data.put("clientId", clientId);
         }
+        if (watchSecret != null) {
+            data.put("watchSecret", watchSecret);
+        }
 
         long ttlSeconds = Math.max(1L, ttl.toSeconds());
 
@@ -60,7 +64,7 @@ public class PushChallengeStore {
             replaceAuthenticationIndex(realmId, userId, id, expiresAt, ttlSeconds);
         }
 
-        return new PushChallenge(id, realmId, userId, nonceBytes, credentialId, clientId, expiresAt, type, PushChallengeStatus.PENDING, now, null);
+        return new PushChallenge(id, realmId, userId, nonceBytes, credentialId, clientId, watchSecret, expiresAt, type, PushChallengeStatus.PENDING, now, null);
     }
 
     public Optional<PushChallenge> get(String challengeId) {
@@ -206,6 +210,7 @@ public class PushChallengeStore {
             decodeNonce(nonce),
             data.get("credentialId"),
             data.get("clientId"),
+            data.get("watchSecret"),
             expires,
             PushChallenge.Type.valueOf(type),
             PushChallengeStatus.valueOf(status),

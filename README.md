@@ -86,6 +86,28 @@ This project extends Keycloak with a push-style second factor that mimics passke
 
 5. **Browser wait + polling:** The Keycloak login UI polls its own challenge store. Once the challenge is approved (or denied) the form resolves automatically. Polling `GET /login/pending` from the app is optional; the confirm token already carries the `cid`.
 
+> This PoC demonstrates both real-time strategies: the enrollment UI listens to server-sent events (SSE) emitted for its challenge, while the login approval screen continues to use classic polling so both patterns can be evaluated side-by-side.
+
+### Enrollment SSE details
+
+- **Endpoint:** `GET /realms/<realm>/push-mfa/enroll/challenges/{challengeId}/events?secret=<watchSecret>` streams `text/event-stream`. The `watchSecret` is a per-challenge random value stored in `PushChallenge.watchSecret`; it prevents other sessions from observing enrollment progress.
+- **Server loop:** `PushMfaResource#emitEnrollmentEvents` runs asynchronously, polls the challenge store every second, and emits a `status` event whenever the challenge state changes or an error occurs. Each event payload is JSON shaped like:
+
+  ```json
+  {
+    "status": "PENDING | APPROVED | DENIED | NOT_FOUND | FORBIDDEN | INVALID | INTERRUPTED",
+    "challengeId": "<uuid>",
+    "expiresAt": "2025-11-14T13:16:12.902Z",
+    "resolvedAt": "2025-11-14T13:16:22.180Z"
+  }
+  ```
+
+  Failures (missing secret, secret mismatch, challenge not found, thread interruption, serialization errors) are logged at INFO level so pod logs provide a complete timeline for troubleshooting.
+
+- **Client behavior:** The enrollment page (`push-register.ftl`) spins up a single `EventSource` pointed at the `eventsUrl`. When a non-`PENDING` status arrives the stream is closed and the hidden `check` form is submitted, allowing Keycloak’s RequiredAction to complete without any manual refresh. If the connection drops (pod restart, network flap) the browser’s native EventSource automatically retries; the script only logs `error` events for visibility.
+
+- **No polling fallback:** Unlike earlier iterations the SSE client never schedules timer-based polling. If EventSource is missing (very old browsers) the script simply logs a warning, which is acceptable in this demo because enrollment is expected to run in modern browsers.
+
 ## Custom Keycloak APIs
 
 All endpoints live under `/realms/push-mfa/push-mfa` and require a bearer token obtained by the device client (`push-device-client`) via client credentials.
