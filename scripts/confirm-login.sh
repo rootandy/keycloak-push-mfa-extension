@@ -98,6 +98,14 @@ if [[ -z ${DEVICE_TOKEN:-} || ${DEVICE_TOKEN} == "null" ]]; then
   exit 1
 fi
 
+REALM_BASE=$(echo "$TOKEN_ENDPOINT" | sed 's#/protocol/.*##')
+PENDING_URL="$REALM_BASE/push-mfa/login/pending"
+echo ">> Demo: listing pending challenges (response is informational)"
+curl -s -G \
+  -H "Authorization: Bearer $DEVICE_TOKEN" \
+  --data-urlencode "userId=$USER_ID" \
+  "$PENDING_URL" | jq
+
 EXPIRY=$(($(date +%s) + 120))
 LOGIN_PAYLOAD=$(jq -n \
   --arg cid "$CHALLENGE_ID" \
@@ -114,7 +122,6 @@ APPROVE_PAYLOAD=$(jq -n \
   --arg token "$DEVICE_LOGIN_TOKEN" \
   '{"token": $token}')
 
-REALM_BASE=$(echo "$TOKEN_ENDPOINT" | sed 's#/protocol/.*##')
 RESPOND_URL="$REALM_BASE/push-mfa/login/challenges/$CHALLENGE_ID/respond"
 echo ">> Responding to challenge"
 curl -s -X POST \
