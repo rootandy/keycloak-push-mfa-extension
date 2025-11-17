@@ -54,6 +54,10 @@ public class PushMfaAuthenticator implements Authenticator {
             ? context.getAuthenticationSession().getClient().getClientId()
             : null;
 
+        String rootSessionId = context.getAuthenticationSession().getParentSession() != null
+            ? context.getAuthenticationSession().getParentSession().getId()
+            : null;
+
         PushChallenge pushChallenge = challengeStore.create(
             context.getRealm().getId(),
             context.getUser().getId(),
@@ -62,7 +66,8 @@ public class PushMfaAuthenticator implements Authenticator {
             PushMfaConstants.CHALLENGE_TTL,
             credential.getId(),
             clientId,
-            null);
+            null,
+            rootSessionId);
 
         authSession.setAuthNote(PushMfaConstants.CHALLENGE_NOTE, pushChallenge.getId());
 

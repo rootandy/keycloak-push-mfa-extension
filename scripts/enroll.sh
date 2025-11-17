@@ -8,6 +8,9 @@ Usage: scripts/enroll.sh <enrollment-token>
 Environment overrides:
   REALM_BASE               Realm base URL (default: http://localhost:8080/realms/push-mfa)
   ENROLL_COMPLETE_URL      Enrollment completion endpoint (default: <REALM_BASE>/push-mfa/enroll/complete)
+  TOKEN_ENDPOINT           OAuth2 token endpoint (default: <REALM_BASE>/protocol/openid-connect/token)
+  DEVICE_CLIENT_ID         Client ID to request device tokens (default: push-device-client)
+  DEVICE_CLIENT_SECRET     Client secret for the device client (default: device-client-secret)
   DEVICE_TYPE              Device type stored with the credential (default: ios)
   FIREBASE_ID              Firebase/FCM identifier (default: mock-fcm-token)
   PSEUDONYMOUS_ID          Pseudonymous user identifier (default: generated UUID)
@@ -46,6 +49,9 @@ sys.stdout.buffer.write(base64.urlsafe_b64decode(s))'
 
 REALM_BASE=${REALM_BASE:-http://localhost:8080/realms/push-mfa}
 ENROLL_COMPLETE_URL=${ENROLL_COMPLETE_URL:-$REALM_BASE/push-mfa/enroll/complete}
+TOKEN_ENDPOINT=${TOKEN_ENDPOINT:-$REALM_BASE/protocol/openid-connect/token}
+DEVICE_CLIENT_ID=${DEVICE_CLIENT_ID:-push-device-client}
+DEVICE_CLIENT_SECRET=${DEVICE_CLIENT_SECRET:-device-client-secret}
 DEVICE_TYPE=${DEVICE_TYPE:-ios}
 FIREBASE_ID=${FIREBASE_ID:-mock-fcm-token}
 PSEUDONYMOUS_ID=${PSEUDONYMOUS_ID:-$(python3 - <<'PY'
@@ -147,7 +153,8 @@ DEVICE_ENROLL_TOKEN="$ENROLL_HEADER_B64.$ENROLL_PAYLOAD_B64.$ENROLL_SIGNATURE_B6
 echo ">> Submitting enrollment reply"
 echo $ENROLL_PAYLOAD_JSON
 ENROLL_RESPONSE=$(curl -s -X POST \
-  -H "Authorization: Bearer $DEVICE_ENROLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg token "$DEVICE_ENROLL_TOKEN" '{"token": $token}')" \
   "$ENROLL_COMPLETE_URL")
 
 echo "$ENROLL_RESPONSE" | jq
@@ -163,6 +170,9 @@ jq -n \
   --arg pseudonymousUserId "$PSEUDONYMOUS_ID" \
   --arg deviceId "$DEVICE_ID" \
   --arg realmBase "$REALM_BASE" \
+  --arg tokenEndpoint "$TOKEN_ENDPOINT" \
+  --arg clientId "$DEVICE_CLIENT_ID" \
+  --arg clientSecret "$DEVICE_CLIENT_SECRET" \
   --arg privateKey "$PRIVATE_KEY_B64" \
   --arg publicKey "$PUBLIC_KEY_B64" \
   --arg deviceType "$DEVICE_TYPE" \
@@ -170,7 +180,7 @@ jq -n \
   --arg keyId "$DEVICE_KEY_ID" \
   --arg deviceLabel "$DEVICE_LABEL" \
   --argjson publicJwk "$PUBLIC_JWK" \
-  '{userId:$userId, pseudonymousUserId:$pseudonymousUserId, deviceId:$deviceId, realmBase:$realmBase, privateKey:$privateKey, publicKey:$publicKey, deviceType:$deviceType, firebaseId:$firebaseId, keyId:$keyId, deviceLabel:$deviceLabel, publicJwk:$publicJwk}' > "$STATE_FILE"
+  '{userId:$userId, pseudonymousUserId:$pseudonymousUserId, deviceId:$deviceId, realmBase:$realmBase, tokenEndpoint:$tokenEndpoint, clientId:$clientId, clientSecret:$clientSecret, privateKey:$privateKey, publicKey:$publicKey, deviceType:$deviceType, firebaseId:$firebaseId, keyId:$keyId, deviceLabel:$deviceLabel, publicJwk:$publicJwk}' > "$STATE_FILE"
 
 echo ">> Device state stored in $STATE_FILE"
 popd >/dev/null

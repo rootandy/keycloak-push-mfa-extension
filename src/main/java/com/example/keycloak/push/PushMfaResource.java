@@ -18,19 +18,31 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import org.jboss.logging.Logger;
 import org.keycloak.credential.CredentialModel;
+import org.keycloak.TokenVerifier;
+import org.keycloak.TokenVerifier.Predicate;
+import org.keycloak.common.VerificationException;
+import org.keycloak.crypto.SignatureProvider;
+import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.protocol.oidc.TokenManager;
+import org.keycloak.representations.AccessToken;
+import org.keycloak.services.Urls;
+import org.keycloak.util.TokenUtil;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.jose.jws.crypto.RSAProvider;
 import org.keycloak.util.JsonSerialization;
 
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -69,8 +81,9 @@ public class PushMfaResource {
 
     @POST
     @Path("enroll/complete")
-    public Response completeEnrollment(@Context HttpHeaders headers) {
-        String deviceToken = requireDeviceAuthorization(headers);
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response completeEnrollment(EnrollmentCompleteRequest request) {
+        String deviceToken = require(request.token(), "token");
         TokenLogHelper.logJwt("enroll-device-token", deviceToken);
 
         JWSInput deviceResponse;
@@ -160,9 +173,10 @@ public class PushMfaResource {
     @GET
     @Path("login/pending")
     public Response listPendingChallenges(@jakarta.ws.rs.QueryParam("userId") String userId,
-                                          @Context HttpHeaders headers) {
+                                          @Context HttpHeaders headers,
+                                          @Context UriInfo uriInfo) {
         String normalizedUserId = require(userId, "userId");
-        DeviceAssertion device = authenticateDevice(headers);
+        DeviceAssertion device = authenticateDevice(headers, uriInfo, "GET");
         if (!Objects.equals(device.user().getId(), normalizedUserId)) {
             throw new ForbiddenException("Device token subject mismatch");
         }
@@ -172,6 +186,7 @@ public class PushMfaResource {
         List<LoginChallenge> pending = challengeStore.findPendingForUser(realm().getId(), device.user().getId()).stream()
             .filter(challenge -> challenge.getType() == PushChallenge.Type.AUTHENTICATION)
             .filter(challenge -> Objects.equals(challenge.getCredentialId(), deviceCredential.getId()))
+            .filter(this::ensureAuthenticationSessionActive)
             .map(challenge -> new LoginChallenge(
                 device.user().getId(),
                 challenge.getId(),
@@ -183,8 +198,11 @@ public class PushMfaResource {
 
     @POST
     @Path("login/challenges/{cid}/respond")
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response respondToChallenge(@PathParam("cid") String cid,
-                                       @Context HttpHeaders headers) {
+                                       ChallengeRespondRequest request,
+                                       @Context HttpHeaders headers,
+                                       @Context UriInfo uriInfo) {
         String challengeId = require(cid, "cid");
         PushChallenge challenge = challengeStore.get(challengeId)
             .orElseThrow(() -> new NotFoundException("Challenge not found"));
@@ -195,8 +213,7 @@ public class PushMfaResource {
             throw new BadRequestException("Challenge is not for login");
         }
 
-        DeviceAssertion assertion = authenticateDevice(headers);
-        TokenLogHelper.logJwt("login-device-token", assertion.token());
+        DeviceAssertion assertion = authenticateDevice(headers, uriInfo, "POST");
 
         UserModel user = assertion.user();
         if (!Objects.equals(user.getId(), challengeUserId)) {
@@ -208,7 +225,27 @@ public class PushMfaResource {
             throw new ForbiddenException("Authentication token device mismatch");
         }
 
-        JsonNode payload = assertion.payload();
+        String deviceToken = require(request.token(), "token");
+        TokenLogHelper.logJwt("login-device-token", deviceToken);
+
+        JWSInput loginResponse;
+        try {
+            loginResponse = new JWSInput(deviceToken);
+        } catch (Exception ex) {
+            throw new BadRequestException("Invalid authentication token");
+        }
+
+        Algorithm algorithm = loginResponse.getHeader().getAlgorithm();
+        if (algorithm == null || !algorithm.name().startsWith("RS")) {
+            throw new BadRequestException("Unsupported signature algorithm: " + algorithm);
+        }
+
+        JsonNode payload;
+        try {
+            payload = JsonSerialization.mapper.readTree(loginResponse.getContent());
+        } catch (Exception ex) {
+            throw new BadRequestException("Unable to parse authentication token");
+        }
 
         String tokenAction = Optional.ofNullable(jsonText(payload, "action"))
             .map(String::toLowerCase)
@@ -220,6 +257,31 @@ public class PushMfaResource {
         }
 
         PushCredentialData data = assertion.credentialData();
+
+        if (data.getAlgorithm() != null && !algorithm.toString().equalsIgnoreCase(data.getAlgorithm())) {
+            throw new BadRequestException("Authentication token algorithm mismatch");
+        }
+
+        PublicKey publicKey;
+        try {
+            publicKey = PushCryptoUtils.publicKeyFromJwkString(data.getPublicKeyJwk());
+        } catch (IllegalArgumentException ex) {
+            throw new BadRequestException("Stored credential contains invalid JWK");
+        }
+        if (publicKey == null) {
+            throw new BadRequestException("Stored credential missing public key material");
+        }
+
+        if (!RSAProvider.verify(loginResponse, publicKey)) {
+            throw new ForbiddenException("Invalid authentication token signature");
+        }
+
+        verifyTokenExpiration(payload.get("exp"), "authentication token");
+
+        String tokenSubject = require(jsonText(payload, "sub"), "sub");
+        if (!Objects.equals(tokenSubject, challengeUserId)) {
+            throw new ForbiddenException("Authentication token subject mismatch");
+        }
 
         if (PushMfaConstants.CHALLENGE_DENY.equals(tokenAction)) {
             challengeStore.resolve(challengeId, PushChallengeStatus.DENIED);
@@ -237,8 +299,10 @@ public class PushMfaResource {
     @PUT
     @Path("device/firebase")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response updateDeviceFirebaseId(@Context HttpHeaders headers, UpdateFirebaseRequest request) {
-        DeviceAssertion device = authenticateDevice(headers);
+    public Response updateDeviceFirebaseId(@Context HttpHeaders headers,
+                                           @Context UriInfo uriInfo,
+                                           UpdateFirebaseRequest request) {
+        DeviceAssertion device = authenticateDevice(headers, uriInfo, "PUT");
         String firebaseId = require(request.firebaseId(), "firebaseId");
         PushCredentialData current = device.credentialData();
         if (firebaseId.equals(current.getFirebaseId())) {
@@ -260,8 +324,10 @@ public class PushMfaResource {
     @PUT
     @Path("device/rotate-key")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response rotateDeviceKey(@Context HttpHeaders headers, RotateDeviceKeyRequest request) {
-        DeviceAssertion device = authenticateDevice(headers);
+    public Response rotateDeviceKey(@Context HttpHeaders headers,
+                                    @Context UriInfo uriInfo,
+                                    RotateDeviceKeyRequest request) {
+        DeviceAssertion device = authenticateDevice(headers, uriInfo, "PUT");
         JsonNode jwkNode = Optional.ofNullable(request.publicKeyJwk())
             .orElseThrow(() -> new BadRequestException("Request missing publicKeyJwk"));
         String algorithm = require(request.algorithm(), "algorithm");
@@ -322,60 +388,118 @@ public class PushMfaResource {
         }
     }
 
-    private String requireDeviceAuthorization(HttpHeaders headers) {
+    private String requireAccessToken(HttpHeaders headers) {
         if (headers == null) {
-            throw new NotAuthorizedException("Authorization header required");
+            throw new NotAuthorizedException("DPoP access token required");
         }
-        String value = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
-        if (value == null || value.isBlank()) {
-            throw new NotAuthorizedException("Device token required");
+        String authorization = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
+        if (authorization == null || authorization.isBlank()) {
+            throw new NotAuthorizedException("DPoP access token required");
         }
-        if (!value.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
-            throw new NotAuthorizedException("Device token required");
+        String token;
+        if (authorization.regionMatches(true, 0, "DPoP ", 0, "DPoP ".length())) {
+            token = authorization.substring("DPoP ".length()).trim();
+        } else if (authorization.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
+            token = authorization.substring("Bearer ".length()).trim();
+        } else {
+            throw new NotAuthorizedException("DPoP access token required");
         }
-        String token = value.substring("Bearer ".length()).trim();
         if (token.isBlank()) {
-            throw new NotAuthorizedException("Device token required");
+            throw new NotAuthorizedException("DPoP access token required");
         }
         return token;
     }
 
-    private DeviceAssertion authenticateDevice(HttpHeaders headers) {
-        String token = requireDeviceAuthorization(headers);
-        return authenticateDevice(token);
+    private AccessToken authenticateAccessToken(String tokenString) {
+        try {
+            Predicate<? super AccessToken> revocationCheck = new TokenManager.TokenRevocationCheck(session);
+            TokenVerifier<AccessToken> verifier = TokenVerifier.create(tokenString, AccessToken.class)
+                .withDefaultChecks()
+                .realmUrl(Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm().getName()))
+                .checkActive(true)
+                .tokenType(List.of(TokenUtil.TOKEN_TYPE_BEARER, TokenUtil.TOKEN_TYPE_DPOP))
+                .withChecks(revocationCheck);
+
+            String kid = verifier.getHeader().getKeyId();
+            String alg = verifier.getHeader().getAlgorithm().name();
+            SignatureVerifierContext svc = session.getProvider(SignatureProvider.class, alg).verifier(kid);
+            verifier.verifierContext(svc);
+            return verifier.verify().getToken();
+        } catch (VerificationException ex) {
+            throw new NotAuthorizedException("Invalid access token", ex);
+        }
     }
 
-    private DeviceAssertion authenticateDevice(String deviceToken) {
-        JWSInput assertion;
+    private String requireDpopProof(HttpHeaders headers) {
+        if (headers == null) {
+            throw new NotAuthorizedException("DPoP proof required");
+        }
+        String value = headers.getHeaderString("DPoP");
+        if (value == null || value.isBlank()) {
+            throw new NotAuthorizedException("DPoP proof required");
+        }
+        return value.trim();
+    }
+
+    private DeviceAssertion authenticateDevice(HttpHeaders headers,
+                                               UriInfo uriInfo,
+                                               String httpMethod) {
+        String accessTokenString = requireAccessToken(headers);
+        AccessToken accessToken = authenticateAccessToken(accessTokenString);
+        String proof = requireDpopProof(headers);
+        JWSInput dpop;
         try {
-            assertion = new JWSInput(deviceToken);
+            dpop = new JWSInput(proof);
         } catch (Exception ex) {
-            throw new BadRequestException("Invalid device token");
+            throw new BadRequestException("Invalid DPoP proof");
         }
 
-        Algorithm algorithm = assertion.getHeader().getAlgorithm();
+        Algorithm algorithm = dpop.getHeader().getAlgorithm();
         if (algorithm == null || !algorithm.name().startsWith("RS")) {
-            throw new BadRequestException("Unsupported device token algorithm: " + algorithm);
+            throw new BadRequestException("Unsupported DPoP algorithm: " + algorithm);
+        }
+
+        String typ = dpop.getHeader().getType();
+        if (typ == null || !"dpop+jwt".equalsIgnoreCase(typ)) {
+            throw new BadRequestException("DPoP proof missing typ=dpop+jwt");
         }
 
         JsonNode payload;
         try {
-            payload = JsonSerialization.mapper.readTree(assertion.getContent());
+            payload = JsonSerialization.mapper.readTree(dpop.getContent());
         } catch (Exception ex) {
-            throw new BadRequestException("Unable to parse device token");
+            throw new BadRequestException("Unable to parse DPoP proof");
         }
 
-        verifyTokenExpiration(payload.get("exp"), "device token");
+        String htm = require(jsonText(payload, "htm"), "htm");
+        if (!httpMethod.equalsIgnoreCase(htm)) {
+            throw new ForbiddenException("DPoP proof htm mismatch");
+        }
+
+        String htu = require(jsonText(payload, "htu"), "htu");
+        String actualHtu = uriInfo.getRequestUri().toString();
+        if (!actualHtu.equals(htu)) {
+            throw new ForbiddenException("DPoP proof htu mismatch");
+        }
+
+        long iat = payload.path("iat").asLong(Long.MIN_VALUE);
+        if (iat == Long.MIN_VALUE) {
+            throw new BadRequestException("DPoP proof missing iat");
+        }
+        long now = Instant.now().getEpochSecond();
+        if (Math.abs(now - iat) > 120) {
+            throw new BadRequestException("DPoP proof expired");
+        }
 
         String tokenSubject = require(jsonText(payload, "sub"), "sub");
+        String tokenDeviceId = require(jsonText(payload, "deviceId"), "deviceId");
+
         UserModel user = getUser(tokenSubject);
 
         List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
         if (credentials.isEmpty()) {
             throw new ForbiddenException("Device not registered for user");
         }
-
-        String tokenDeviceId = require(jsonText(payload, "deviceId"), "deviceId");
 
         CredentialModel credential = credentials.stream()
             .filter(model -> {
@@ -390,7 +514,7 @@ public class PushMfaResource {
             throw new BadRequestException("Stored credential missing JWK");
         }
         if (credentialData.getAlgorithm() != null && !algorithm.toString().equalsIgnoreCase(credentialData.getAlgorithm())) {
-            throw new BadRequestException("Device token algorithm mismatch");
+            throw new BadRequestException("DPoP algorithm mismatch");
         }
 
         PublicKey publicKey;
@@ -403,11 +527,57 @@ public class PushMfaResource {
             throw new BadRequestException("Stored credential missing public key material");
         }
 
-        if (!RSAProvider.verify(assertion, publicKey)) {
-            throw new ForbiddenException("Invalid device token signature");
+        if (!RSAProvider.verify(dpop, publicKey)) {
+            throw new ForbiddenException("Invalid DPoP proof signature");
         }
 
-        return new DeviceAssertion(deviceToken, user, credential, credentialData, payload, algorithm);
+        AccessToken.Confirmation confirmation = accessToken.getConfirmation();
+        if (confirmation == null || confirmation.getKeyThumbprint() == null || confirmation.getKeyThumbprint().isBlank()) {
+            throw new ForbiddenException("Access token missing DPoP binding");
+        }
+        String expectedJkt = computeJwkThumbprint(credentialData.getPublicKeyJwk());
+        if (!Objects.equals(expectedJkt, confirmation.getKeyThumbprint())) {
+            throw new ForbiddenException("Access token DPoP binding mismatch");
+        }
+
+        return new DeviceAssertion(user, credential, credentialData);
+    }
+
+    private String computeJwkThumbprint(String jwkJson) {
+        try {
+            JsonNode jwk = JsonSerialization.mapper.readTree(jwkJson);
+            String kty = require(jwk.path("kty").asText(null), "kty");
+            if (!"RSA".equalsIgnoreCase(kty)) {
+                throw new BadRequestException("Unsupported key type for DPoP binding");
+            }
+            String n = require(jwk.path("n").asText(null), "n");
+            String e = require(jwk.path("e").asText(null), "e");
+            var canonical = JsonSerialization.mapper.createObjectNode();
+            canonical.put("e", e);
+            canonical.put("kty", "RSA");
+            canonical.put("n", n);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(JsonSerialization.mapper.writeValueAsBytes(canonical));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (BadRequestException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BadRequestException("Unable to compute JWK thumbprint", ex);
+        }
+    }
+
+    private boolean ensureAuthenticationSessionActive(PushChallenge challenge) {
+        String rootSessionId = challenge.getRootSessionId();
+        if (rootSessionId == null || rootSessionId.isBlank()) {
+            return true;
+        }
+        var root = session.authenticationSessions().getRootAuthenticationSession(realm(), rootSessionId);
+        if (root != null) {
+            return true;
+        }
+        LOG.infof("Cleaning up stale challenge %s because auth session %s is gone", challenge.getId(), rootSessionId);
+        challengeStore.remove(challenge.getId());
+        return false;
     }
 
     private void emitEnrollmentEvents(String challengeId,
@@ -492,10 +662,16 @@ public class PushMfaResource {
         }
     }
 
+    record EnrollmentCompleteRequest(@JsonProperty("token") String token) {
+    }
+
     record LoginChallenge(@JsonProperty("userId") String userId,
                           @JsonProperty("cid") String cid,
                           @JsonProperty("expiresAt") Instant expiresAt,
                           @JsonProperty("clientId") String clientId) {
+    }
+
+    record ChallengeRespondRequest(@JsonProperty("token") String token) {
     }
 
     record UpdateFirebaseRequest(@JsonProperty("firebaseId") String firebaseId) {
@@ -505,11 +681,8 @@ public class PushMfaResource {
                                   @JsonProperty("algorithm") String algorithm) {
     }
 
-    record DeviceAssertion(String token,
-                           UserModel user,
+    record DeviceAssertion(UserModel user,
                            CredentialModel credential,
-                           PushCredentialData credentialData,
-                           JsonNode payload,
-                           Algorithm algorithm) {
+                           PushCredentialData credentialData) {
     }
 }

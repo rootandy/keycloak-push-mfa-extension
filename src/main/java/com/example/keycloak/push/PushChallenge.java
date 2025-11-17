@@ -18,6 +18,7 @@ public final class PushChallenge {
     private final String credentialId;
     private final String clientId;
     private final String watchSecret;
+    private final String rootSessionId;
     private final Instant expiresAt;
     private final Type type;
     private final PushChallengeStatus status;
@@ -31,6 +32,7 @@ public final class PushChallenge {
                          String credentialId,
                          String clientId,
                          String watchSecret,
+                         String rootSessionId,
                          Instant expiresAt,
                          Type type,
                          PushChallengeStatus status,
@@ -43,6 +45,7 @@ public final class PushChallenge {
         this.credentialId = credentialId;
         this.clientId = clientId;
         this.watchSecret = watchSecret;
+        this.rootSessionId = rootSessionId;
         this.expiresAt = Objects.requireNonNull(expiresAt);
         this.type = Objects.requireNonNull(type);
         this.status = Objects.requireNonNull(status);
@@ -76,6 +79,10 @@ public final class PushChallenge {
 
     public String getWatchSecret() {
         return watchSecret;
+    }
+
+    public String getRootSessionId() {
+        return rootSessionId;
     }
 
     public Instant getExpiresAt() {
