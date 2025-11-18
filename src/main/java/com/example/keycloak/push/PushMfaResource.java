@@ -191,7 +191,7 @@ public class PushMfaResource {
             .map(challenge -> new LoginChallenge(
                 device.user().getId(),
                 challenge.getId(),
-                challenge.getExpiresAt().toString(),
+                challenge.getExpiresAt().getEpochSecond(),
                 challenge.getClientId()))
             .toList();
         return Response.ok(Map.of("challenges", pending)).build();
@@ -549,7 +549,7 @@ public class PushMfaResource {
         return new DeviceAssertion(user, credential, credentialData);
     }
 
-    private String computeJwkThumbprint(String jwkJson) {
+    static String computeJwkThumbprint(String jwkJson) {
         try {
             JsonNode jwk = JsonSerialization.mapper.readTree(jwkJson);
             String kty = require(jwk.path("kty").asText(null), "kty");
@@ -601,7 +601,7 @@ public class PushMfaResource {
         }
     }
 
-    private void ensureKeyMatchesAlgorithm(KeyWrapper keyWrapper, String algorithm) {
+    static void ensureKeyMatchesAlgorithm(KeyWrapper keyWrapper, String algorithm) {
         String normalizedAlg = algorithm == null ? null : algorithm.toUpperCase();
         if (normalizedAlg == null || normalizedAlg.isBlank()) {
             throw new BadRequestException("Missing algorithm");
@@ -632,7 +632,7 @@ public class PushMfaResource {
         keyWrapper.setAlgorithm(normalizedAlg);
     }
 
-    private String curveForAlgorithm(String algorithm) {
+    private static String curveForAlgorithm(String algorithm) {
         return switch (algorithm) {
             case "ES256" -> "P-256";
             case "ES384" -> "P-384";
@@ -863,7 +863,7 @@ public class PushMfaResource {
 
     record LoginChallenge(@JsonProperty("userId") String userId,
                           @JsonProperty("cid") String cid,
-                          @JsonProperty("expiresAt") String expiresAt,
+                          @JsonProperty("expiresAt") long expiresAt,
                           @JsonProperty("clientId") String clientId) {
     }
 

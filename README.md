@@ -260,7 +260,7 @@ The `DPoP` header carries a short-lived JWT signed with the device key (see the 
     {
       "userId": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
       "cid": "1a6d6a0b-3385-4772-8eb8-0d2f4dbd25a4",
-      "expiresAt": "2025-11-14T13:16:12.902Z",
+      "expiresAt": 1731402972,
       "clientId": "test-app"
     }
   ]
@@ -268,6 +268,8 @@ The `DPoP` header carries a short-lived JWT signed with the device key (see the 
 ```
 
 If the credential referenced by the device assertion does not own an outstanding challenge, the array is empty even if other devices for the same user are awaiting approval.
+
+`expiresAt` is expressed in Unix seconds (the same format used by JWT `exp` claims) so the device can reuse its existing JWT helpers for deadline calculations.
 
 ### Approve or deny a challenge
 
@@ -329,6 +331,17 @@ Content-Type: application/json
 The DPoP proof must be signed with the *existing* device key. After validation, Keycloak swaps the stored JWK/algorithm (and updates the credential timestamp). The response is `{ "status": "rotated" }`. Future API calls must be signed with the newly-installed key.
 
 > Demo helper: `scripts/rotate-device-key.sh <pseudonymous-id>`
+
+### Demo CLI scripts
+
+The repository includes thin shell wrappers that simulate a device:
+
+- `scripts/enroll.sh <enrollment-token>` decodes the QR payload, generates a key pair (RSA or EC), and completes enrollment.
+- `scripts/confirm-login.sh <confirm-token>` decodes the Firebase-style payload, lists pending challenges (for demo visibility), and approves/denies the challenge.
+- `scripts/update-firebase.sh <pseudonymous-id> <firebase-id>` updates the stored push registration.
+- `scripts/rotate-device-key.sh <pseudonymous-id>` rotates the device key material and immediately persists the new JWK/algorithm.
+
+All scripts source `scripts/common.sh`, which centralizes base64 helpers, compact-JWS signing, DPoP proof creation, and token acquisition. The helper expects `scripts/sign_jws.py` to exist (or `COMMON_SIGN_JWS` to point to a compatible signer), so replacing the demo logic with a real implementation only requires swapping in a different signer.
 
 ## App Implementation Notes
 

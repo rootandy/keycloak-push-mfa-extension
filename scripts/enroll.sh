@@ -26,38 +26,9 @@ fi
 
 ENROLL_TOKEN=$1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SIGN_JWS="$SCRIPT_DIR/sign_jws.py"
-
-if ! python3 - <<'PY' >/dev/null 2>&1; then
-import importlib.util
-import sys
-sys.exit(0 if importlib.util.find_spec("cryptography") else 1)
-PY
-  echo "error: Python module 'cryptography' is required (install via 'python3 -m pip install --user cryptography')" >&2
-  exit 1
-fi
-
-b64urlencode() {
-  python3 -c "import base64, sys; data = sys.stdin.buffer.read(); print(base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii'))"
-}
-
-b64urldecode() {
-  python3 -c 'import sys, base64
-s = sys.stdin.read().strip()
-s += "=" * (-len(s) % 4)  # fix missing padding
-sys.stdout.buffer.write(base64.urlsafe_b64decode(s))'
-}
-
-to_upper() {
-  printf '%s' "${1:-}" | tr '[:lower:]' '[:upper:]'
-}
-
-sign_compact_jws() {
-  local alg=$1
-  local key_file=$2
-  local signing_input=$3
-  python3 "$SIGN_JWS" "$alg" "$key_file" "$signing_input"
-}
+COMMON_SIGN_JWS="${COMMON_SIGN_JWS:-"$SCRIPT_DIR/sign_jws.py"}"
+source "$SCRIPT_DIR/common.sh"
+common::ensure_crypto
 
 validate_signing_alg() {
   local alg="$1"
@@ -113,9 +84,9 @@ mkdir -p "$DEVICE_STATE_DIR"
 DEVICE_PRIVATE_KEY_PATH="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.key"
 DEVICE_PUBLIC_KEY_PATH="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.pub"
 DEVICE_KEY_TYPE=${DEVICE_KEY_TYPE:-RSA}
-DEVICE_KEY_TYPE_UPPER=$(to_upper "$DEVICE_KEY_TYPE")
+DEVICE_KEY_TYPE_UPPER=$(common::to_upper "$DEVICE_KEY_TYPE")
 DEVICE_EC_CURVE=${DEVICE_EC_CURVE:-P-256}
-DEVICE_EC_CURVE=$(to_upper "$DEVICE_EC_CURVE")
+DEVICE_EC_CURVE=$(common::to_upper "$DEVICE_EC_CURVE")
 
 case "$DEVICE_KEY_TYPE_UPPER" in
   RSA)
@@ -135,7 +106,7 @@ case "$DEVICE_KEY_TYPE_UPPER" in
     exit 1
     ;;
 esac
-DEVICE_SIGNING_ALG=$(to_upper "$DEVICE_SIGNING_ALG")
+DEVICE_SIGNING_ALG=$(common::to_upper "$DEVICE_SIGNING_ALG")
 validate_signing_alg "$DEVICE_SIGNING_ALG"
 
 if [[ "$DEVICE_KEY_TYPE_UPPER" != "EC" ]]; then
@@ -151,7 +122,7 @@ trap cleanup EXIT
 pushd "$WORKDIR" >/dev/null
 
 echo ">> Decoding enrollment challenge"
-ENROLL_PAYLOAD=$(echo -n "$ENROLL_TOKEN" | cut -d'.' -f2 | b64urldecode)
+ENROLL_PAYLOAD=$(echo -n "$ENROLL_TOKEN" | cut -d'.' -f2 | common::b64urldecode)
 ENROLLMENT_ID=$(echo "$ENROLL_PAYLOAD" | jq -r '.enrollmentId')
 ENROLL_NONCE=$(echo "$ENROLL_PAYLOAD" | jq -r '.nonce')
 USER_ID=$(echo "$ENROLL_PAYLOAD" | jq -r '.sub')
@@ -238,9 +209,9 @@ ENROLL_HEADER_JSON=$(jq -nc \
   --arg alg "$DEVICE_SIGNING_ALG" \
   --arg kid "$DEVICE_KEY_ID" \
   '{alg:$alg,typ:"JWT",kid:$kid}')
-ENROLL_HEADER_B64=$(printf '%s' "$ENROLL_HEADER_JSON" | b64urlencode)
-ENROLL_PAYLOAD_B64=$(printf '%s' "$ENROLL_PAYLOAD_JSON" | b64urlencode)
-ENROLL_SIGNATURE_B64=$(sign_compact_jws "$DEVICE_SIGNING_ALG" "$DEVICE_PRIVATE_KEY_PATH" "$ENROLL_HEADER_B64.$ENROLL_PAYLOAD_B64")
+ENROLL_HEADER_B64=$(printf '%s' "$ENROLL_HEADER_JSON" | common::b64urlencode)
+ENROLL_PAYLOAD_B64=$(printf '%s' "$ENROLL_PAYLOAD_JSON" | common::b64urlencode)
+ENROLL_SIGNATURE_B64=$(common::sign_compact_jws "$DEVICE_SIGNING_ALG" "$DEVICE_PRIVATE_KEY_PATH" "$ENROLL_HEADER_B64.$ENROLL_PAYLOAD_B64")
 DEVICE_ENROLL_TOKEN="$ENROLL_HEADER_B64.$ENROLL_PAYLOAD_B64.$ENROLL_SIGNATURE_B64"
 
 echo ">> Submitting enrollment reply"
