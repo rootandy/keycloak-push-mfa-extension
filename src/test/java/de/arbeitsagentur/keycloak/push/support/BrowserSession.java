@@ -1,6 +1,7 @@
 package de.arbeitsagentur.keycloak.push.support;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -78,6 +79,7 @@ public final class BrowserSession {
         URI action = resolve(page.uri(), form.attr("action"));
         FetchResponse response = fetch(action, "POST", Map.of("check", "true"));
         assertEquals(302, response.status(), "Enrollment completion should redirect");
+        assertAccountConsoleAccessible();
     }
 
     public DeviceChallenge extractDeviceChallenge(HtmlPage page) {
@@ -100,6 +102,16 @@ public final class BrowserSession {
     public void completePushChallenge(URI formAction) throws Exception {
         FetchResponse response = fetch(formAction, "POST", Map.of());
         assertEquals(302, response.status(), "Push completion should redirect");
+        assertAccountConsoleAccessible();
+    }
+
+    private void assertAccountConsoleAccessible() throws Exception {
+        URI accountUri = realmBase.resolve("account/");
+        FetchResponse console = fetch(accountUri, "GET", null);
+        assertEquals(200, console.status(), "Account console should load");
+        assertNotNull(console.document(), "Account console response missing HTML");
+        Element appRoot = console.document().getElementById("app");
+        assertNotNull(appRoot, "Account console root element not found");
     }
 
     private FetchResponse fetch(URI uri, String method, Map<String, String> params) throws Exception {
