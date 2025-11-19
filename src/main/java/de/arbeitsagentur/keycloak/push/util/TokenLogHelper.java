@@ -13,26 +13,29 @@ public final class TokenLogHelper {
     }
 
     public static void logJwt(String label, String token) {
+        if (!LOG.isDebugEnabled()) {
+            return;
+        }
         if (token == null || token.isBlank()) {
-            LOG.infof("%s token: <empty>", label);
+            LOG.debugf("%s token: <empty>", label);
             return;
         }
 
         String[] parts = token.split("\\.");
         if (parts.length < 2) {
-            LOG.infof("%s token (non-JWT): %s", label, token);
+            LOG.debugf("%s token (non-JWT): %s", label, token);
             return;
         }
 
         try {
             String headerJson = decodePart(parts[0]);
             String payloadJson = decodePart(parts[1]);
-            LOG.infof("%s token:%n  header:%n%s%n  payload:%n%s",
+            LOG.debugf("%s token:%n  header:%n%s%n  payload:%n%s",
                 label,
                 indent(headerJson),
                 indent(payloadJson));
         } catch (Exception ex) {
-            LOG.infof("%s token (decode error): %s", label, token);
+            LOG.debugf("%s token (decode error): %s", label, token);
         }
     }
 
