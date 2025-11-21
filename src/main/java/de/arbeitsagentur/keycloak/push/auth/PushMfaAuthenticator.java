@@ -187,9 +187,6 @@ public class PushMfaAuthenticator implements Authenticator {
                 PushCredentialData credentialData =
                         credentialModel == null ? null : PushCredentialService.readCredentialData(credentialModel);
                 String clientId = current.getClientId();
-                if (clientId == null && context.getAuthenticationSession().getClient() != null) {
-                    clientId = context.getAuthenticationSession().getClient().getClientId();
-                }
                 String clientDisplayName = resolveClientDisplayName(context, clientId);
                 String confirmToken = (credentialModel == null
                                 || credentialData == null
@@ -309,14 +306,6 @@ public class PushMfaAuthenticator implements Authenticator {
     }
 
     private String resolveClientDisplayName(AuthenticationFlowContext context, String clientId) {
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        ClientModel authClient = authSession != null ? authSession.getClient() : null;
-        if (authClient != null && (clientId == null || clientId.equals(authClient.getClientId()))) {
-            String displayName = extractClientDisplayName(authClient);
-            if (displayName != null) {
-                return displayName;
-            }
-        }
         if (clientId == null) {
             return null;
         }
