@@ -58,7 +58,7 @@
    }
    ```
 
-3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it contains only the pseudonymous user id, the challenge id (`cid`), the originating client id, and the numeric message `typ`/`ver` identifiers so the provider learns nothing about the real user or whether the login ultimately succeeds.
+3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it contains only the pseudonymous user id, the challenge id (`cid`), the originating client id (and its display name if configured), and the numeric message `typ`/`ver` identifiers so the provider learns nothing about the real user or whether the login ultimately succeeds.
 
    ```json
    {
@@ -69,6 +69,7 @@
      "ver": 1,
      "cid": "1a6d6a0b-3385-4772-8eb8-0d2f4dbd25a4",
      "client_id": "test-app",
+     "client_name": "Test App",
      "iat": 1731402960,
      "exp": 1731403260
    }
@@ -89,7 +90,7 @@
 
    See [DPoP Authentication](#dpop-authentication) for the proof format and how access tokens are obtained.
 
-5. **Browser wait (SSE):** The Keycloak login UI now opens a server-sent events (SSE) stream for the login challenge. Once the SSE status switches away from `PENDING`, the waiting form automatically submits and the flow proceeds. The legacy `GET /login/pending` endpoint is still available for scripts and debugging, but browsers no longer rely on polling.
+5. **Browser wait (SSE):** The Keycloak login UI now opens a server-sent events (SSE) stream for the login challenge. Once the SSE status switches away from `PENDING`, the waiting form automatically submits and the flow proceeds. The legacy `GET /push-mfa/login/pending` endpoint is still available for scripts and debugging, but browsers no longer rely on polling.
 
 ### Enrollment SSE details
 
@@ -349,8 +350,8 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 - **Device key material:** Generate a key pair per device, select a unique `kid`, and keep the private key in the device secure storage. Persist and exchange the public component exclusively as a JWK (the same document posted in `cnf.jwk`).
 - **Algorithm choice:** The demo scripts default to RSA/RS256 but also support EC keys and ECDSA proofs—set `DEVICE_KEY_TYPE=EC`, pick a curve via `DEVICE_EC_CURVE` (P-256/384/521), and override `DEVICE_SIGNING_ALG` if you need ES256/384/512. The selected algorithm is stored with the credential so Keycloak enforces it for all future DPoP proofs, login approvals, and rotation requests.
 - **State to store locally:** pseudonymous user id ↔ real Keycloak user id mapping, the device key pair, the `kid`, `deviceType`, `pushProviderId`, `pushProviderType`, preferred `deviceLabel`, and any metadata needed to post to Keycloak again.
-- **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `sub`, and either call `/login/pending` (optional) or immediately sign the login approval JWT and post it to `/login/challenges/{cid}/respond`.
-- **Pending challenge discovery:** Before calling `/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device.
+- **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `sub`, and either call `/push-mfa/login/pending` (optional) or immediately sign the login approval JWT and post it to `/push-mfa/login/challenges/{cid}/respond`. Use the optional `client_name` claim (when present) to display a friendly app label.
+- **Pending challenge discovery:** Before calling `/push-mfa/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device.
 - **Access tokens:** Obtain a short-lived access token via the realm’s token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key.
 - **Request authentication:** Every REST call (aside from enrollment, which already embeds the device key) must include a DPoP proof signed with the current device key. The proof binds the request method and URL to the hardware-backed key, making replay or reverse-engineering of a shared client secret ineffective.
 - **Error handling:** Enrollment and login requests return structured error responses (`400`, `403`, or `404`) when the JWTs are invalid, expired, or mismatched. Surface those errors to the user to re-trigger the flow if necessary.

@@ -2,6 +2,7 @@ package de.arbeitsagentur.keycloak.push;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -57,19 +58,39 @@ class PushTokenBuilderTest {
                 "challenge-123",
                 Instant.ofEpochSecond(1700000100),
                 URI.create("http://localhost:8080/"),
-                "test-client");
+                "test-client",
+                "Test Client");
 
         SignedJWT jwt = SignedJWT.parse(token);
         JWTClaimsSet claims = jwt.getJWTClaimsSet();
         assertEquals("device-alias", claims.getSubject());
         assertEquals("challenge-123", claims.getStringClaim("cid"));
         assertEquals("test-client", claims.getStringClaim("client_id"));
+        assertEquals("Test Client", claims.getStringClaim("client_name"));
         assertEquals("http://localhost:8080/realms/demo", claims.getIssuer());
         assertEquals(PushMfaConstants.PUSH_MESSAGE_TYPE, claims.getIntegerClaim("typ"));
         assertEquals(PushMfaConstants.PUSH_MESSAGE_VERSION, claims.getIntegerClaim("ver"));
         assertEquals(Date.from(Instant.ofEpochSecond(1700000100)), claims.getExpirationTime());
         assertEquals(keyWrapper.getKid(), jwt.getHeader().getKeyID());
         assertEquals(Algorithm.RS256.toString(), jwt.getHeader().getAlgorithm().getName());
+    }
+
+    @Test
+    void confirmTokenOmitsClientNameWhenMissing() throws Exception {
+        String token = PushConfirmTokenBuilder.build(
+                session,
+                realm,
+                "device-alias",
+                "challenge-123",
+                Instant.ofEpochSecond(1700000100),
+                URI.create("http://localhost:8080/"),
+                "test-client",
+                null);
+
+        SignedJWT jwt = SignedJWT.parse(token);
+        JWTClaimsSet claims = jwt.getJWTClaimsSet();
+        assertEquals("test-client", claims.getStringClaim("client_id"));
+        assertNull(claims.getClaim("client_name"));
     }
 
     @Test
@@ -87,6 +108,7 @@ class PushTokenBuilderTest {
                 "challenge-123",
                 Instant.ofEpochSecond(1700000150),
                 URI.create("http://localhost:8080/"),
+                null,
                 null);
 
         SignedJWT jwt = SignedJWT.parse(token);

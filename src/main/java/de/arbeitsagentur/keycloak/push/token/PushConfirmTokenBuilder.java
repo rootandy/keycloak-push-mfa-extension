@@ -26,7 +26,8 @@ public final class PushConfirmTokenBuilder {
             String challengeId,
             Instant challengeExpiresAt,
             URI baseUri,
-            String clientId) {
+            String clientId,
+            String clientDisplayName) {
         String signatureAlgorithm = realm.getDefaultSignatureAlgorithm();
         if (signatureAlgorithm == null || signatureAlgorithm.isBlank()) {
             signatureAlgorithm = Algorithm.RS256.toString();
@@ -47,6 +48,9 @@ public final class PushConfirmTokenBuilder {
         payload.put("cid", challengeId);
         if (clientId != null) {
             payload.put("client_id", clientId);
+        }
+        if (clientDisplayName != null && !clientDisplayName.isBlank()) {
+            payload.put("client_name", clientDisplayName);
         }
         Instant issuedAt = Instant.now();
         payload.put("iat", issuedAt.getEpochSecond());

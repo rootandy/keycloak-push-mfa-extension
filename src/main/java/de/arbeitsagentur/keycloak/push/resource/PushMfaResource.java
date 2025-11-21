@@ -30,7 +30,6 @@ import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
@@ -66,7 +65,6 @@ import org.keycloak.util.TokenUtil;
 public class PushMfaResource {
 
     private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final KeycloakSession session;
     private final PushChallengeStore challengeStore;
@@ -378,14 +376,6 @@ public class PushMfaResource {
 
     private RealmModel realm() {
         return session.getContext().getRealm();
-    }
-
-    private UserModel userByUsername(String username) {
-        UserModel user = session.users().getUserByUsername(realm(), username);
-        if (user == null) {
-            throw new NotFoundException("User not found");
-        }
-        return user;
     }
 
     private UserModel getUser(String userId) {

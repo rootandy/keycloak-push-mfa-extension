@@ -20,6 +20,7 @@ import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.AuthenticatorConfigModel;
+import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -75,9 +76,9 @@ public class PushMfaAuthenticator implements Authenticator {
         }
         byte[] challengeBytes = new byte[0];
 
-        String clientId = context.getAuthenticationSession().getClient() != null
-                ? context.getAuthenticationSession().getClient().getClientId()
-                : null;
+        ClientModel client = context.getAuthenticationSession().getClient();
+        String clientId = client != null ? client.getClientId() : null;
+        String clientDisplayName = extractClientDisplayName(client);
 
         String rootSessionId = context.getAuthenticationSession().getParentSession() != null
                 ? context.getAuthenticationSession().getParentSession().getId()
@@ -105,7 +106,8 @@ public class PushMfaAuthenticator implements Authenticator {
                 pushChallenge.getId(),
                 pushChallenge.getExpiresAt(),
                 context.getUriInfo().getBaseUri(),
-                clientId);
+                clientId,
+                clientDisplayName);
 
         LOG.debugf(
                 "Push message prepared {version=%d,type=%d,pseudonymousUserId=%s}",
@@ -187,6 +189,7 @@ public class PushMfaAuthenticator implements Authenticator {
                 if (clientId == null && context.getAuthenticationSession().getClient() != null) {
                     clientId = context.getAuthenticationSession().getClient().getClientId();
                 }
+                String clientDisplayName = resolveClientDisplayName(context, clientId);
                 String confirmToken = (credentialModel == null
                                 || credentialData == null
                                 || credentialData.getPseudonymousUserId() == null)
@@ -198,7 +201,8 @@ public class PushMfaAuthenticator implements Authenticator {
                                 current.getId(),
                                 current.getExpiresAt(),
                                 context.getUriInfo().getBaseUri(),
-                                clientId);
+                                clientId,
+                                clientDisplayName);
 
                 showWaitingForm(context, current, credentialData, confirmToken);
             }
@@ -301,6 +305,30 @@ public class PushMfaAuthenticator implements Authenticator {
                 .path("events")
                 .queryParam("secret", watchSecret);
         return builder.build().toString();
+    }
+
+    private String resolveClientDisplayName(AuthenticationFlowContext context, String clientId) {
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        ClientModel authClient = authSession != null ? authSession.getClient() : null;
+        if (authClient != null && (clientId == null || clientId.equals(authClient.getClientId()))) {
+            String displayName = extractClientDisplayName(authClient);
+            if (displayName != null) {
+                return displayName;
+            }
+        }
+        if (clientId == null) {
+            return null;
+        }
+        ClientModel byClientId = context.getSession().clients().getClientByClientId(context.getRealm(), clientId);
+        return extractClientDisplayName(byClientId);
+    }
+
+    private String extractClientDisplayName(ClientModel client) {
+        if (client == null) {
+            return null;
+        }
+        String name = client.getName();
+        return (name == null || name.isBlank()) ? null : name;
     }
 
     private Duration parseDurationSeconds(AuthenticatorConfigModel config, String key, Duration defaultValue) {
