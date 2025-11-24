@@ -5,8 +5,8 @@
     <#elseif section = "form">
         <style>
             .kc-push-card {
-                background: var(--pf-global--BackgroundColor--100, #fff);
-                border: 1px solid var(--pf-global--BorderColor--100, #d2d2d2);
+                background: var(--pf-v5-global--BackgroundColor--100, #fff);
+                border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
                 border-radius: 4px;
                 box-shadow: var(--pf-global--BoxShadow--md, 0 1px 2px rgba(0, 0, 0, 0.1));
                 padding: 1.5rem;
@@ -15,7 +15,7 @@
 
             .kc-push-hint {
                 margin-top: 0.75rem;
-                color: var(--pf-global--Color--200, #6a6e73);
+                color: var(--pf-v5-global--Color--200, #6a6e73);
                 font-size: 0.95rem;
             }
 
@@ -40,17 +40,17 @@
             .kc-push-token-card {
                 margin-top: 1.25rem;
                 padding: 1.25rem;
-                border: 1px solid var(--pf-global--BorderColor--100, #d2d2d2);
+                border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
                 border-radius: 4px;
-                background: var(--pf-global--BackgroundColor--100, #fff);
+                background: var(--pf-v5-global--BackgroundColor--100, #fff);
             }
 
             .kc-push-token {
-                background: var(--pf-global--BackgroundColor--200, #f5f5f5);
-                border: 1px solid var(--pf-global--BorderColor--200, #c7c7c7);
+                background: var(--pf-v5-global--BackgroundColor--200, #f5f5f5);
+                border: 1px solid var(--pf-v5-global--BorderColor--200, #c7c7c7);
                 border-radius: 4px;
                 padding: 1rem;
-                font-family: var(--pf-global--FontFamily--monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+                font-family: var(--pf-v5-global--FontFamily--monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
                 font-size: 0.9rem;
                 max-height: 240px;
                 overflow-y: auto;

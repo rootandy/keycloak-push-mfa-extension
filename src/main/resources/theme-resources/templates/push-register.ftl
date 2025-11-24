@@ -14,8 +14,8 @@
 
             .kc-push-register-card {
                 flex: 1 1 280px;
-                background: var(--pf-global--BackgroundColor--100, #fff);
-                border: 1px solid var(--pf-global--BorderColor--100, #d2d2d2);
+                background: var(--pf-v5-global--BackgroundColor--100, #fff);
+                border: 1px solid var(--pf-v5-global--BorderColor--100, #d2d2d2);
                 border-radius: 4px;
                 padding: 1.25rem;
                 box-shadow: var(--pf-global--BoxShadow--md, 0 1px 2px rgba(0, 0, 0, 0.1));
@@ -28,11 +28,12 @@
             }
 
             .kc-push-register-token {
-                background: var(--pf-global--BackgroundColor--200, #f5f5f5);
-                border: 1px solid var(--pf-global--BorderColor--200, #c7c7c7);
+                background: var(--pf-v5-global--BackgroundColor--200, #f5f5f5);
+                border: 1px solid var(--pf-v5-global--BorderColor--200, #c7c7c7);
                 border-radius: 4px;
                 padding: 1rem;
                 font-family: var(--pf-global--FontFamily--monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+                color: var(--pf-v5-global--Color--200, #6a6e73);
                 font-size: 0.9rem;
                 max-height: 240px;
                 overflow-y: auto;
@@ -48,7 +49,7 @@
 
             .kc-push-register__hint {
                 margin-top: 0.5rem;
-                color: var(--pf-global--Color--200, #6a6e73);
+                color: var(--pf-v5-global--Color--200, #6a6e73);
                 font-size: 0.9rem;
             }
 
@@ -58,8 +59,8 @@
                 justify-content: center;
                 min-height: 240px;
                 padding: 0.5rem;
-                background: var(--pf-global--BackgroundColor--200, #f5f5f5);
-                border: 1px dashed var(--pf-global--BorderColor--200, #c7c7c7);
+                background: var(--pf-v5-global--BackgroundColor--200, #f5f5f5);
+                border: 1px dashed var(--pf-v5-global--BorderColor--200, #c7c7c7);
                 border-radius: 4px;
             }
 
