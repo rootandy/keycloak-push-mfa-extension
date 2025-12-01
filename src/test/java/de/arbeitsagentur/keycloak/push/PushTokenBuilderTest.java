@@ -63,7 +63,8 @@ class PushTokenBuilderTest {
 
         SignedJWT jwt = SignedJWT.parse(token);
         JWTClaimsSet claims = jwt.getJWTClaimsSet();
-        assertEquals("credential-alias", claims.getSubject());
+        assertNull(claims.getSubject());
+        assertEquals("credential-alias", claims.getStringClaim("credId"));
         assertEquals("challenge-123", claims.getStringClaim("cid"));
         assertEquals("test-client", claims.getStringClaim("client_id"));
         assertEquals("Test Client", claims.getStringClaim("client_name"));
@@ -89,6 +90,8 @@ class PushTokenBuilderTest {
 
         SignedJWT jwt = SignedJWT.parse(token);
         JWTClaimsSet claims = jwt.getJWTClaimsSet();
+        assertNull(claims.getSubject());
+        assertEquals("credential-alias", claims.getStringClaim("credId"));
         assertEquals("test-client", claims.getStringClaim("client_id"));
         assertNull(claims.getClaim("client_name"));
     }

@@ -42,7 +42,7 @@ public final class PushConfirmTokenBuilder {
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("iss", issuer.toString());
-        payload.put("sub", credentialId);
+        payload.put("credId", credentialId);
         payload.put("typ", PushMfaConstants.PUSH_MESSAGE_TYPE);
         payload.put("ver", PushMfaConstants.PUSH_MESSAGE_VERSION);
         payload.put("cid", challengeId);

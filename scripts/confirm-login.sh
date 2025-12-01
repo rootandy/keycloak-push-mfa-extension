@@ -42,7 +42,7 @@ if [[ -z $CONFIRM_PAYLOAD ]]; then
   exit 1
 fi
 
-CREDENTIAL_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.sub')
+CREDENTIAL_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.credId // empty')
 CHALLENGE_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.cid // empty')
 if [[ -z $CREDENTIAL_ID || $CREDENTIAL_ID == "null" ]]; then
   echo "error: confirm token missing credential id" >&2

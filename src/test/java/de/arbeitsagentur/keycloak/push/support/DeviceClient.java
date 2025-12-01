@@ -75,10 +75,13 @@ public final class DeviceClient {
     public void respondToChallenge(String confirmToken, String challengeId) throws Exception {
         ensureAccessToken();
         SignedJWT confirm = SignedJWT.parse(confirmToken);
-        String cid = Objects.requireNonNullElse(confirm.getJWTClaimsSet().getStringClaim("cid"), challengeId);
+        var confirmClaims = confirm.getJWTClaimsSet();
+        String cid = Objects.requireNonNullElse(confirmClaims.getStringClaim("cid"), challengeId);
+        String credId = Objects.requireNonNull(confirmClaims.getStringClaim("credId"), "Confirm token missing credId");
+        assertEquals(state.credentialId(), credId, "Confirm token carried unexpected credential id");
         JWTClaimsSet loginClaims = new JWTClaimsSet.Builder()
                 .claim("cid", cid)
-                .claim("credId", state.credentialId())
+                .claim("credId", credId)
                 .claim("deviceId", state.deviceId())
                 .claim("action", "approve")
                 .expirationTime(java.util.Date.from(Instant.now().plusSeconds(120)))
