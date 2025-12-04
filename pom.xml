@@ -4,10 +4,33 @@
 
   <groupId>de.arbeitsagentur.opdt</groupId>
   <artifactId>keycloak-push-mfa-extension</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>0.1.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
   <name>Keycloak Push MFA Extension</name>
+  <description>Keycloak extension that enables Multi-Factor Authentication using push notifications</description>
+  <url>https://github.com/ba-itsys/keycloak-push-mfa-extension</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <organization>IT-Systemhaus der Bundesagentur für Arbeit</organization>
+      <organizationUrl>https://github.com/ba-itsys</organizationUrl>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/ba-itsys/keycloak-push-mfa-extension.git</connection>
+    <developerConnection>scm:git:git@github.com:ba-itsys/keycloak-push-mfa-extension.git</developerConnection>
+    <url>https://github.com/ba-itsys/keycloak-push-mfa-extension/tree/main</url>
+  </scm>
 
   <properties>
     <keycloak.version>26.4.5</keycloak.version>
@@ -160,6 +183,17 @@
             </goals>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.9.0</version>
+        <extensions>true</extensions>
+        <configuration>
+          <publishingServerId>central</publishingServerId>
+          <autoPublish>true</autoPublish>
+          <waitUntil>published</waitUntil>
+        </configuration>
       </plugin>
     </plugins>
   </build>
