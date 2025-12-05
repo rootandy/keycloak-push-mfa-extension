@@ -151,6 +151,9 @@ class PushMfaIntegrationIT {
         return deviceClient;
     }
 
+    /**
+     * find the versioned JAR produced by Maven, e.g. keycloak-push-mfa-extension.jar
+     */
     private static Path locateProviderJar() {
         Path targetDir = Paths.get("target");
         if (!Files.isDirectory(targetDir)) {

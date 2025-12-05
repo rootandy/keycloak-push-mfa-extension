@@ -572,3 +572,22 @@ For full flow details, refer to the project's high-level sequence diagram.
 - **DPoP (Demonstration of Proof-of-Possession)**: Mocked in headers for secure API calls.
 - **Push Simulation**: Instead of real FCM/APNs, the mock can be triggered directly via API for testing.
 - **Security Notes**: This is a mock; do not use real keys or expose it in production. Placeholders are used for any sensitive info (e.g., `<MOCK_DEVICE_ID>` instead of real UUIDs).
+
+## Troubleshooting
+
+### Docker Environment Not Found for Integration Tests
+
+The Integration Tests require a container runtime environment. 
+If you encounter the error "Could not find a valid Docker environment", this typically occurs when:
+
+1. Docker is not running
+2. You're using Podman instead of Docker
+3. The container socket is not accessible
+
+**For Podman users:**
+To run the tests with Podman, configure the Docker compatibility socket:
+
+```shell
+export DOCKER_HOST=unix://${XDG_RUNTIME_DIR}/podman/podman.sock
+mvn clean verify
+```
